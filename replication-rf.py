@@ -23,9 +23,17 @@ import seaborn as sns
 import matplotlib.cm as cm
 import math
 import statsmodels.api as sm
+from scipy.stats import pearsonr
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.decomposition import PCA, IncrementalPCA
+from sklearn.neural_network import MLPClassifier
+from sklearn.metrics import roc_auc_score
+import warnings
 
 ROOT_DIR = os.getcwd() + r'/../'
-MODEL = 'rf_09-06-23'
+MODEL = '09-26-23'
+warnings.filterwarnings("ignore")
 
 def setup_data(df_l = pd.read_csv(ROOT_DIR + r'output/clean_scaled.csv',index_col=0)):
     for c in df_l.columns:
@@ -37,6 +45,568 @@ def setup_data(df_l = pd.read_csv(ROOT_DIR + r'output/clean_scaled.csv',index_co
     y_l=df_l['LGB_id']
     return X_l,y_l, df_l
     
+
+def reduce_dimensions(dl:pd.DataFrame):
+    #return dl
+    pca = PCA(.95)
+    pca.fit(dl)
+    dl = pca.transform(dl)
+    '''
+    print(pca.n_components_)
+    plt.plot(np.cumsum(pca.explained_variance_ratio_))
+    plt.xlabel('number of components')
+    plt.ylabel('cumulative explained variance')
+    plt.show()
+    plt.close()
+    '''
+    return dl
+    
+
+def reduced_train(naive:bool = False, 
+                  clf = RandomForestClassifier(verbose=0, n_jobs=-1, class_weight='balanced',n_estimators=50, random_state=0, criterion='entropy'),
+                  Xl: pd.DataFrame=None,
+                  yl: pd.DataFrame()=None):
+    try:
+        if naive:
+            y_tr = yl.sample(frac=.75)
+            return y_tr.mean(), yl.drop(y_tr.index,axis=0).mean()
+        Xl = reduce_dimensions(Xl)
+        X_tr, X_te, y_tr, y_te = train_test_split(Xl, yl, stratify=yl)
+        clf.fit(X_tr,y_tr)
+        y_p = clf.predict_proba(X_te)
+        y_p = [x[1] for x in y_p]
+        
+        #General proportion
+        pred = np.mean(y_p)
+        truth = y_te.mean()
+        return pred,truth
+    except:
+        return 0,0
+
+def logo_model_test(Xl:pd.DataFrame,
+                       yl:pd.DataFrame, 
+                       clf=RandomForestClassifier(verbose=0, n_jobs=-1, class_weight='balanced',n_estimators=50, random_state=0, criterion='entropy'),
+                       ty: str = 'RF', 
+                       naive:bool = False):
+    #General:
+    compare = pd.DataFrame()
+    MSE = []
+    preds = []
+    truths = []
+    sex = []
+    age=[]
+    race=[]
+    state = []
+    pop = []
+    typ=[]
+    auROC=[]
+    ICCs = []
+    for s in pd.unique(Xl['sitecode']):
+        dt = Xl
+        dat=yl
+        tr = dt['sitecode']!=s
+        dt = reduce_dimensions(dt)
+        X_tr = dt[tr]
+        X_te = dt[~tr]
+        y_tr = dat[tr]
+        y_te = dat[~tr]
+        if naive:
+            pred = y_tr.mean()
+        else:
+            try:
+                clf.fit(X_tr,y_tr)
+                y_p = clf.predict_proba(X_te)
+                y_p = [x[1] for x in y_p]
+                aur = roc_auc_score(y_te, pd.Series(y_p))
+                pred=np.mean(y_p)
+            except:
+                pred=0
+                aur=0
+        truth = y_te.mean()
+        MSE.append((pred-truth)**2)
+        preds.append(pred)
+        truths.append(truth)
+        auROC.append(aur)
+        sex.append('All')
+        age.append('All')
+        race.append('All')
+        state.append(s)
+        pop.append(len(X_te))
+        typ.append(ty)
+        for x in pd.unique(Xl['sex']):
+            dt = Xl[Xl['sex']==x]
+            dat = yl[Xl['sex']==x]
+            tr = dt['sitecode']!=s
+            dt = reduce_dimensions(dt)
+            X_tr = dt[tr]
+            X_te = dt[~tr]
+            y_tr = dat[tr]
+            y_te = dat[~tr]
+            if naive:
+                pred = y_tr.mean()
+            else:
+                try:
+                    clf.fit(X_tr,y_tr)
+                    y_p = clf.predict_proba(X_te)
+                    y_p = [x[1] for x in y_p]
+                    pred=np.mean(y_p)
+                    aur = roc_auc_score(y_te, pd.Series(y_p))
+                except:
+                    pred=0
+                    aur=0
+            truth = y_te.mean()
+            MSE.append((pred-truth)**2)
+            preds.append(pred)
+            truths.append(truth)
+            auROC.append(aur)
+            sex.append(x)
+            age.append('All')
+            race.append('All')
+            state.append(s)
+            pop.append(len(X_te))
+            typ.append(ty)
+        for r in pd.unique(Xl['race4']):
+            dt = Xl[Xl['race4']==r]
+            dat = yl[Xl['race4']==r]
+            tr = dt['sitecode']!=s
+            dt = reduce_dimensions(dt)
+            X_tr = dt[tr]
+            X_te = dt[~tr]
+            y_tr = dat[tr]
+            y_te = dat[~tr]
+            if naive:
+                pred = y_tr.mean()
+            else:
+                try:
+                    clf.fit(X_tr,y_tr)
+                    y_p = clf.predict_proba(X_te)
+                    y_p = [x[1] for x in y_p]
+                    pred=np.mean(y_p)
+                    aur = roc_auc_score(y_te, pd.Series(y_p))
+                except:
+                    pred=0
+                    aur=0
+            truth = y_te.mean()
+            MSE.append((pred-truth)**2)
+            preds.append(pred)
+            truths.append(truth)
+            auROC.append(aur)
+            sex.append('All')
+            age.append('All')
+            race.append(r)
+            state.append(s)
+            pop.append(len(X_te))
+            typ.append(ty)
+            for x in pd.unique(Xl['sex']):
+                dt = Xl[(Xl['race4']==r) & (Xl['sex']==x)]
+                dat = yl[(Xl['race4']==r) & (Xl['sex']==x)]
+                tr = dt['sitecode']!=s
+                dt = reduce_dimensions(dt)
+                X_tr = dt[tr]
+                X_te = dt[~tr]
+                y_tr = dat[tr]
+                y_te = dat[~tr]
+                if naive:
+                    pred = y_tr.mean()
+                else:
+                    try:
+                        clf.fit(X_tr,y_tr)
+                        y_p = clf.predict_proba(X_te)
+                        y_p = [x[1] for x in y_p]
+                        pred=np.mean(y_p)
+                        aur = roc_auc_score(y_te, pd.Series(y_p))
+                    except:
+                        pred=0
+                        aur=0
+                truth = y_te.mean()
+                MSE.append((pred-truth)**2)
+                preds.append(pred)
+                truths.append(truth)
+                auROC.append(aur)
+                sex.append(x)
+                age.append('All')
+                race.append(r)
+                state.append(s)
+                pop.append(len(X_te))
+                typ.append(ty)
+                for a in pd.unique(Xl['age']):
+                    dt = Xl[(Xl['race4']==r) & (Xl['sex']==x) & (Xl['age']==a)]
+                    dat = yl[(Xl['race4']==r) & (Xl['sex']==x) & (Xl['age']==a)]
+                    tr = dt['sitecode']!=s
+                    dt = reduce_dimensions(dt)
+                    X_tr = dt[tr]
+                    X_te = dt[~tr]
+                    y_tr = dat[tr]
+                    y_te = dat[~tr]
+                    if naive:
+                        pred = y_tr.mean()
+                    else:
+                        try:
+                            clf.fit(X_tr,y_tr)
+                            y_p = clf.predict_proba(X_te)
+                            y_p = [x[1] for x in y_p]
+                            pred=np.mean(y_p)
+                            aur = roc_auc_score(y_te, pd.Series(y_p))
+                        except:
+                            pred=0
+                            aur=0
+                    truth = y_te.mean()
+                    MSE.append((pred-truth)**2)
+                    preds.append(pred)
+                    truths.append(truth)
+                    auROC.append(aur)
+                    sex.append(x)
+                    age.append(a)
+                    race.append(r)
+                    state.append(s)
+                    pop.append(len(X_te))
+                    typ.append(ty)
+                    
+    #Compile results
+    compare['Proportion'] = preds
+    compare['Truth'] = truths
+    compare['MSE'] = MSE
+    compare['Population'] = pop
+    compare['AuR0C'] = auROC
+    compare['Sex'] = sex
+    compare['Age'] = age
+    compare['Race'] = race
+    compare['State'] = state
+    compare['Type'] = typ
+    
+    compare.to_csv(ROOT_DIR+r'output/compare-'+ty+'.csv')
+    return compare
+
+def model_test(Xl:pd.DataFrame,yl:pd.DataFrame, clf=RandomForestClassifier(verbose=0, n_jobs=-1, class_weight='balanced',n_estimators=50, random_state=0, criterion='entropy'),ty: str = 'RF', naive:bool = False):
+    compare = pd.DataFrame()
+    #General
+    pred,truth = reduced_train(naive,clf,Xl,yl)
+    MSE = [(pred-truth)**2]
+    preds = [pred]
+    truths = [truth]
+    sex = ['All']
+    age=['All']
+    race=['All']
+    state = ['All']
+    pop = [len(yl)]
+    typ=[ty]
+    
+    for s in pd.unique(Xl['sitecode']):
+        dt = Xl[Xl['sitecode']==s]
+        dat = yl[Xl['sitecode']==s]
+        pred,truth = reduced_train(naive,clf,Xl=dt,yl = dat)
+        MSE.append((pred-truth)**2)
+        preds.append(pred)
+        truths.append(truth)
+        sex.append('All')
+        age.append('All')
+        race.append('All')
+        state.append(s)
+        pop.append(len(dt))
+        typ.append(ty)
+        for x in pd.unique(Xl['sex']):
+            dt = Xl[(Xl['sitecode']==s)&(Xl['sex']==x)]
+            dat = yl[(Xl['sitecode']==s)&(Xl['sex']==x)]
+            pred,truth = reduced_train(naive,clf,dt,dat)
+            MSE.append((pred-truth)**2)
+            preds.append(pred)
+            truths.append(truth)
+            sex.append(x)
+            age.append('All')
+            race.append('All')
+            state.append(s)
+            pop.append(len(dt))
+            typ.append(ty)
+            for r in pd.unique(Xl['race4']):
+                dt = Xl[(Xl['sitecode']==s)&(Xl['sex']==x) & (Xl['race4']==r)]
+                dat = yl[(Xl['sitecode']==s)&(Xl['sex']==x) & (Xl['race4']==r)]
+                pred,truth = reduced_train(naive,clf,dt,dat)
+                MSE.append((pred-truth)**2)
+                preds.append(pred)
+                truths.append(truth)
+                sex.append(x)
+                age.append('All')
+                race.append(r)
+                state.append(s)
+                pop.append(len(dt))
+                typ.append(ty)
+                for a in pd.unique(Xl['age']):
+                    dt = Xl[(Xl['sitecode']==s)&(Xl['sex']==x) & (Xl['race4']==r) & (Xl['age']==a)]
+                    dat = yl[(Xl['sitecode']==s)&(Xl['sex']==x) & (Xl['race4']==r) & (Xl['age']==a)]
+                    pred,truth = reduced_train(naive,clf,dt,dat)
+                    MSE.append((pred-truth)**2)
+                    preds.append(pred)
+                    truths.append(truth)
+                    sex.append(x)
+                    age.append(a)
+                    race.append(r)
+                    state.append(s)
+                    pop.append(len(dt))
+                    typ.append(ty)
+                    
+        for r in pd.unique(Xl['race4']):
+            dt = Xl[(Xl['sitecode']==s)&(Xl['race4']==r)]
+            dat = yl[(Xl['sitecode']==s)&(Xl['race4']==r)]
+            pred,truth = reduced_train(naive,clf,dt,dat)
+            MSE.append((pred-truth)**2)
+            preds.append(pred)
+            truths.append(truth)
+            sex.append('All')
+            age.append('All')
+            race.append(r)
+            state.append(s)
+            pop.append(len(dt))
+            typ.append(ty)
+            for x in pd.unique(Xl['sex']):
+                dt = Xl[(Xl['sitecode']==s)&(Xl['sex']==x) & (Xl['race4']==r)]
+                dat = yl[(Xl['sitecode']==s)&(Xl['sex']==x) & (Xl['race4']==r)]
+                pred,truth = reduced_train(naive,clf,dt,dat)
+                MSE.append((pred-truth)**2)
+                preds.append(pred)
+                truths.append(truth)
+                sex.append(x)
+                age.append('All')
+                race.append(r)
+                state.append(s)
+                pop.append(len(dt))
+                typ.append(ty)
+                for a in pd.unique(Xl['age']):
+                    dt = Xl[(Xl['sitecode']==s)&(Xl['sex']==x) & (Xl['sitecode']==s) & (Xl['age']==a)]
+                    dat = yl[(Xl['sitecode']==s)&(Xl['sex']==x) & (Xl['sitecode']==s) & (Xl['age']==a)]
+                    pred,truth = reduced_train(naive,clf,dt,dat)
+                    MSE.append((pred-truth)**2)
+                    preds.append(pred)
+                    truths.append(truth)
+                    sex.append(x)
+                    age.append(a)
+                    race.append(r)
+                    state.append(s)
+                    pop.append(len(dt))
+                    typ.append(ty)
+    '''    
+    for st in pd.unique(Xl['sitecode']):
+        o=Xl
+        Xl=Xl[Xl['sitecode']==st]
+        #Sex-segregated;
+        for x in pd.unique(Xl['sex']):
+            pred,truth = reduced_train(naive,clf,Xl[Xl['sex']==x],yl[Xl['sex']==x])
+            MSE.append((pred-truth)**2)
+            preds.append(pred)
+            truths.append(truth)
+            sex.append(x)
+            age.append('All')
+            race.append('All')
+            state.append(st)
+            pop.append(len(yl[Xl['sex']==x]))
+            typ.append(ty)
+            #Age-segregated
+            for a in pd.unique(Xl['age']):
+                pred,truth = reduced_train(naive,clf,Xl[(Xl['sex']==x) & (Xl['age']==a)],yl[(Xl['sex']==x) & (Xl['age']==a)])
+                MSE.append((pred-truth)**2)
+                preds.append(pred)
+                truths.append(truth)
+                sex.append(x)
+                age.append(a)
+                race.append('All')
+                state.append(st)
+                pop.append(len(yl[(Xl['sex']==x) & (Xl['age']==a)]))
+                typ.append(ty)
+                #Race-segregated
+                for ra in pd.unique(Xl['race4']):
+                    pred,truth = reduced_train(naive,clf,Xl[(Xl['sex']==x) & (Xl['age']==a) & (Xl['race4']==ra)],yl[(Xl['sex']==x) & (Xl['age']==a) & (Xl['race4']==ra)])
+                    MSE.append((pred-truth)**2)
+                    preds.append(pred)
+                    truths.append(truth)
+                    sex.append(x)
+                    age.append(a)
+                    race.append(ra)
+                    state.append(st)
+                    pop.append(len(yl[(Xl['sex']==x) & (Xl['age']==a) & (Xl['race4']==ra)]))
+                    typ.append(ty)
+                        
+        #Race-segregated;
+        for x in pd.unique(Xl['race4']):
+            pred,truth = reduced_train(naive,clf,Xl[Xl['race4']==x],yl[Xl['race4']==x])
+            MSE.append((pred-truth)**2)
+            preds.append(pred)
+            truths.append(truth)
+            sex.append('All')
+            age.append('All')
+            race.append(x)
+            state.append('All')
+            pop.append(len(yl[Xl['race4']==x]))
+            typ.append(ty)
+            #Age-segregated
+            for a in pd.unique(Xl['age']):
+                pred,truth = reduced_train(naive,clf,Xl[(Xl['race4']==x) & (Xl['age']==a)],yl[(Xl['race4']==x) & (Xl['age']==a)])
+                MSE.append((pred-truth)**2)
+                preds.append(pred)
+                truths.append(truth)
+                sex.append('All')
+                age.append(a)
+                race.append(x)
+                state.append('All')
+                pop.append(len(yl[(Xl['race4']==x) & (Xl['age']==a)]))
+                typ.append(ty)
+                #Sex-segregated
+                for ra in pd.unique(Xl['sex']):
+                    pred,truth = reduced_train(naive,clf,Xl[(Xl['sex']==ra) & (Xl['age']==a) & (Xl['race4']==x)],yl[(Xl['sex']==ra) & (Xl['age']==a) & (Xl['race4']==x)])
+                    MSE.append((pred-truth)**2)
+                    preds.append(pred)
+                    truths.append(truth)
+                    sex.append(ra)
+                    age.append(a)
+                    race.append(x)
+                    state.append('All')
+                    pop.append(len(yl[(Xl['sex']==ra) & (Xl['age']==a) & (Xl['race4']==x)]))
+                    typ.append(ty)
+                    #State segregated
+                    for s in pd.unique(Xl['sitecode']):
+                        pred,truth = reduced_train(naive,clf,Xl[(Xl['sex']==ra) & (Xl['age']==a) & (Xl['race4']==x) & (Xl['sitecode']==s)],yl[(Xl['sex']==ra) & (Xl['age']==a) & (Xl['race4']==x) & (Xl['sitecode']==s)])
+                        MSE.append((pred-truth)**2)
+                        preds.append(pred)
+                        truths.append(truth)
+                        sex.append(ra)
+                        age.append(a)
+                        race.append(x)
+                        state.append(s)
+                        pop.append(len(yl[(Xl['sex']==ra) & (Xl['age']==a) & (Xl['race4']==x) & (Xl['sitecode']==s)]))
+                        typ.append(ty)
+        
+        sequence=['sitecode','sex','age','race']
+        k=0
+        xt=Xl
+        yt=y
+        #State-segregated;
+        for i in range(len(sequence)):
+            ...#xt[sitecode+] = 'All'
+            for j in pd.unique(xt[sequence[i]]):
+                xt1=xt[xt[i]==j]
+                ... #xt[sex+] = 'All'
+                k = k+1
+                if len(sequence)-k > 0:
+                    for i2 in range(k,len(sequence)):
+                        for j2 in pd.unique(xt1[sequence[i2]]):
+                            xt2=xt1[xt1[sequence[i2]]==j2]
+                            ... #xt[age+]='All'
+                            k=k+1
+                            if k < len(sequence):
+                                for i3 in range(k,len(sequence)):
+                                    for j3 in pd.unique(xt2[sequence[i3]]):
+                                        xt3=xt2[xt2[sequence[i3]]==j3]
+                                        ... #xt[race] = 'All'
+                                        k=k+1
+                                        if k < len(sequence):
+                                            for i4 in range(k,len(sequence)):
+                                                for j4 in pd.unique(xt3[sequence[i4]]):
+                                                    xt4=xt3[xt3[i4]==j4]
+                                                    ... #Different
+                                                    k=k+1
+                                                    if k == len(sequence):
+                                                        continue
+    '''                                        
+    '''                                      
+            xt=[Xl]
+            i_l = []
+            j_l = []
+            ranges = [range(k,len(sequence)) for k in range(len(sequence))]
+            k=0
+            while k<len(sequence):
+                i_l.append(range(k,len(sequence)))
+                for i in i_l:
+                    j_l.append(pd.unique(xt[k][sequence[i]]))
+                    for j in pd.unique(xt[k][sequence[i]]):
+                        for l in xt:
+                            xt.append(l[l[sequence[i]==j]])
+                        ...
+                k=k+1
+                ...
+                k=k+1
+                    
+                                                    
+                                                    
+                        
+            for j in pd.unique(xt[i]):
+                xt_s=xt[xt[i]==j]
+                yt_s=yt[xt[i]==j]
+                pred,truth = reduced_train(naive,clf,xt_s,yt_s)
+                MSE.append((pred-truth)**2)
+                preds.append(pred)
+                truths.append(truth)
+                sex.append(pd.unique(xt_s['sex']).tolist())
+                age.append((pd.unique(xt_s['age'])).tolist())
+                race.append((pd.unique(xt_s['race4'])).tolist())
+                state.append(pd.unique(xt_s['race4']).tolist())
+                pop.append(len(yt_s))
+                typ.append(ty)
+                for i2
+            xt=xt_s
+            yt=yt_s
+    '''
+    '''
+            dt = dt[]
+            pred,truth = reduced_train(naive,clf,Xl[Xl[i]==x],yl[Xl[i]==x])
+            MSE.append((pred-truth)**2)
+            preds.append(pred)
+            truths.append(truth)
+            sex.append('All')
+            age.append('All')
+            race.append('All')
+            state.append(x)
+            pop.append(len(yl[Xl['sitecode']==x]))
+            typ.append(ty)
+            #Age-segregated
+            for a in pd.unique(Xl['age']):
+                pred,truth = reduced_train(naive,clf,Xl[(Xl['sitecode']==x) & (Xl['age']==a)],yl[(Xl['sitecode']==x) & (Xl['age']==a)])
+                MSE.append((pred-truth)**2)
+                preds.append(pred)
+                truths.append(truth)
+                sex.append("All")
+                age.append(a)
+                race.append('All')
+                state.append(x)
+                pop.append(len(yl[(Xl['sitecode']==x) & (Xl['age']==a)]))
+                typ.append(ty)
+                #Race-segregated
+                for ra in pd.unique(Xl['race4']):
+                    pred,truth = reduced_train(naive,clf,Xl[(Xl['sitecode']==x) & (Xl['age']==a) & (Xl['race4']==ra)],yl[(Xl['sitecode']==x) & (Xl['age']==a) & (Xl['race4']==ra)])
+                    MSE.append((pred-truth)**2)
+                    preds.append(pred)
+                    truths.append(truth)
+                    sex.append("All")
+                    age.append(a)
+                    race.append(ra)
+                    state.append(x)
+                    pop.append(len(yl[(Xl['sitecode']==x) & (Xl['age']==a) & (Xl['race4']==ra)]))
+                    typ.append(ty)
+                    #State segregated
+                    for s in pd.unique(Xl['sex']):
+                        pred,truth = reduced_train(naive,clf,Xl[(Xl['sex']==s) & (Xl['age']==a) & (Xl['race4']==ra) & (Xl['sitecode']==x)],yl[(Xl['sex']==s) & (Xl['age']==a) & (Xl['race4']==ra) & (Xl['sitecode']==x)])
+                        MSE.append((pred-truth)**2)
+                        preds.append(pred)
+                        truths.append(truth)
+                        sex.append(s)
+                        age.append(a)
+                        race.append(ra)
+                        state.append(x)
+                        pop.append(len(yl[(Xl['sex']==s) & (Xl['age']==a) & (Xl['race4']==ra) & (Xl['sitecode']==x)]))
+                        typ.append(ty)
+                        '''
+                        
+    #Compile results
+    compare['Proportion'] = preds
+    compare['Truth'] = truths
+    compare['MSE'] = MSE
+    compare['Population'] = pop
+    compare['Sex'] = sex
+    compare['Age'] = age
+    compare['Race'] = race
+    compare['State'] = state
+    compare['Type'] = typ
+    
+    compare.to_csv(ROOT_DIR+r'output/compare-'+ty+'.csv')
+    return compare
+
 
 def train_rf_model(b_param = {'n_estimators':200, 'random_state':0, 'criterion': 'entropy', 'max_features':None, 'ccp_alpha':0.0}):
 
@@ -318,6 +888,7 @@ def calculate_metrics(X_l,y_l,clf,df_l):
     state['lower_bound']=state['est_proportion']+min_err
     state['upper_bound']=state['est_proportion']+max_err
     df_l = pd.concat([df_l,pd.Series(y_p, name='prediction')],axis=1)
+    auROC = roc_auc_score(y_l,y_p)
     icc = pg.intraclass_corr(data=df_l, targets='prediction', raters='sitecode', ratings='LGB_id')
     return state, icc, df_l
 
@@ -356,7 +927,7 @@ def accuracy_figures(dl):
     data['Category'] = '0'
     
     fields = {'Prediction':'prediction', 'Real':'LGB_id'}
-    sex_dic = {'Male': 0, 'Female':1}
+    sex_dic = {'Male': 0, 'Female':1, '0':'Male','1':'Female'}
     for ty in pd.unique(data['Type']):
         for a in pd.unique(dl['age']):
             for s in pd.unique(sex):
@@ -411,11 +982,11 @@ def accuracy_figures(dl):
 def mse_figures(dl):
     dt = pd.DataFrame()
     #dl.iloc[dl.index % 3 == 1,1] #NN correction
-    dt['Segregation'] = ['General','Sex','Sex, Age', 'Sex, Age, Race']
+    dt['Segregation'] = ['None','Sex', 'Race', 'Sex, Race', 'Sex, Age, Race']
     dt['MSE'] = 0
-    p = [dl.loc[(dl['Type']=='RF') & (dl['Segregation']=='General'),'MSE'].mean(), dl.loc[(dl['Type']=='RF') & ((dl['Segregation']=='x=0') | ((dl['Segregation']=='x=1'))),'MSE'].mean(), dl.loc[(dl['Type']=='RF') & (dl['Segregation'].apply(lambda k: len(k))==7),'MSE'].mean(), dl.loc[(dl['Type']=='RF') & (dl['Segregation'].apply(lambda k: len(k))>8),'MSE'].mean()]
-    n = [dl.loc[(dl['Type']=='NN') & (dl['Segregation']=='General'),'MSE'].mean(), dl.loc[(dl['Type']=='NN') & ((dl['Segregation']=='x=0') | ((dl['Segregation']=='x=1'))),'MSE'].mean(), dl.loc[(dl['Type']=='NN') & (dl['Segregation'].apply(lambda k: len(k))==7),'MSE'].mean(), dl.loc[(dl['Type']=='NN') & (dl['Segregation'].apply(lambda k: len(k))>8),'MSE'].mean()]
-    m = [dl.loc[(dl['Type']=='Naive') & (dl['Segregation']=='General'),'MSE'].mean(), dl.loc[(dl['Type']=='Naive') & ((dl['Segregation']=='x=0') | ((dl['Segregation']=='x=1'))),'MSE'].mean(), dl.loc[(dl['Type']=='Naive') & (dl['Segregation'].apply(lambda k: len(k))==7),'MSE'].mean(), dl.loc[(dl['Type']=='Naive') & (dl['Segregation'].apply(lambda k: len(k))>8),'MSE'].mean()]
+    p = [dl.loc[(dl['Type']=='RF') & (dl['Sex']=='All') & (dl['Race']=='All'),'MSE'].mean(), dl.loc[(dl['Type']=='RF') & (dl['Sex']!='All') & (dl['Race']=='All'),'MSE'].mean(), dl.loc[(dl['Type']=='RF') & (dl['Race']!='All') & (dl['Sex']=='All'),'MSE'].mean(), dl.loc[(dl['Type']=='RF') &  (dl['Sex']!='All') & (dl['Race']!='All') & (dl['Age']=='All'),'MSE'].mean(),dl.loc[(dl['Type']=='RF') &  (dl['Sex']!='All') & (dl['Race']!='All') & (dl['Age']!='All'),'MSE'].mean()]
+    n = [dl.loc[(dl['Type']=='NN') & (dl['Sex']=='All') & (dl['Race']=='All'),'MSE'].mean(), dl.loc[(dl['Type']=='NN') & (dl['Sex']!='All') & (dl['Race']=='All'),'MSE'].mean(), dl.loc[(dl['Type']=='NN') & (dl['Race']!='All') & (dl['Sex']=='All'),'MSE'].mean(), dl.loc[(dl['Type']=='NN') &  (dl['Sex']!='All') & (dl['Race']!='All') & (dl['Age']=='All'),'MSE'].mean(),dl.loc[(dl['Type']=='NN') &  (dl['Sex']!='All') & (dl['Race']!='All') & (dl['Age']!='All'),'MSE'].mean()]
+    m = [dl.loc[(dl['Type']=='Naive') & (dl['Sex']=='All') & (dl['Race']=='All'),'MSE'].mean(), dl.loc[(dl['Type']=='Naive') & (dl['Sex']!='All') & (dl['Race']=='All'),'MSE'].mean(), dl.loc[(dl['Type']=='Naive') & (dl['Race']!='All') & (dl['Sex']=='All'),'MSE'].mean(), dl.loc[(dl['Type']=='Naive') &  (dl['Sex']!='All') & (dl['Race']!='All') & (dl['Age']=='All'),'MSE'].mean(),dl.loc[(dl['Type']=='Naive') &  (dl['Sex']!='All') & (dl['Race']!='All') & (dl['Age']!='All'),'MSE'].mean()]
     dt['MSE'] = p
     dt['Type']="RF Estimate"
     dt = pd.concat([dt,dt,dt], axis = 0)
@@ -425,16 +996,46 @@ def mse_figures(dl):
     dt.iloc[(len(m)+len(n)):,1] = n
     dt.iloc[(len(m)+len(n)):,2] = 'NN Estimate'
     
-    colors = {'RF Estimate':'Red', 'Naive':'Green', 'NN Estimate':'Yellow'}
+    colors = {'RF Estimate':'Red', 'Naive':'Green', 'NN Estimate':'Blue'}
     #Print actual graph
     fig, ax = plt.subplots()
-    plt.title('MSE between Estimated and Real LGB Proportions')
-    plt.xlabel('Segregation Level')
-    plt.ylabel('MSE')
+    fig.set_size_inches(8,6) 
+    ax.set_title('MSE between Estimated and Real LGB Proportions', fontsize=20)
+    ax.set_xlabel('Segregation Level', fontsize=16)
+    ax.set_ylabel('MSE',fontsize=16)
     for c in pd.unique(dt['Type']):
         dat = dt[dt['Type']==c]
         plt.scatter(x = dat['Segregation'], y = dat['MSE'], label = c, color = colors[c])
-    ax.legend(loc="upper left")
+    ax.legend(loc="upper left",fontsize=14)
+    fig.savefig(ROOT_DIR+ 'figure/MSE.png')
+    plt.close()
+    
+def calculate_pvalues(dl):
+    dfcols = pd.DataFrame(columns=dl.columns)
+    pvalues = dfcols.transpose().join(dfcols, how='outer')
+    for r in dl.columns:
+        for c in dl.columns:
+            tmp = dl[dl[r].notnull() & dl[c].notnull()]
+            pvalues[r][c] = round(pearsonr(tmp[r], tmp[c])[1], 4)
+    return pvalues
+    
+def analyze_states(dl: pd.DataFrame()):
+    prri= pd.read_csv(ROOT_DIR+r'raw_data_2019/PRRI.csv', index_col=0)
+    for i in dl.index:
+        for c in prri.columns:
+            dl.loc[i,c] = prri.loc[state_dic[i[0]],c]
+    correl = dl.corr()['Proportion'].drop(['Proportion'],axis=0)
+    sns.heatmap(dl.corr(method='pearson', min_periods=1))
+    plt.show()
+    dt = dl.drop(['OpposeSSM',"Don't Know / RefusedSSM", 'OpposeProt', "Don't Know / RefusedProt", 'OpposeRel', "Don't Know / RefusedRel"],axis=1)
+    
+    reg = LinearRegression().fit(dl.drop('Proportion',axis=1), dl['Proportion'])
+    reg.score(dl.drop('Proportion',axis=1), dl['Proportion'])
+    
+state_dic = {'AL':'Alabama', 'AR':'Arkansas', 'AZB':'Arizona', 'CA':'California', 'CO':'Colorado', 'CT':'Connecticut', 'FL':'Florida', 'HI':'Hawaii', 'IA':'Iowa', 'IL':'Illinois', 'KY':'Kentucky', 'MD':'Maryland', 'ME':'Maine', 'MI':'Michigan', 'MO':'Missouri', 'MS':'Mississippi', 'NC':'North Carolina', 'ND':'North Dakota', 'NE':'Nebraska', 'NH':'New Hampshire', 'NJ':'New Jersey', 'NM':'New Mexico', 'NV':'Nevada', 'NY':'New York', 'OK':'Oklahoma', 'PA':'Pennsylvania', 'RI':'Rhode Island', 'SC':'South Carolina', 'TX':'Texas', 'USA':'National', 'UT':'Utah', 'VA':'Virginia', 'VT':'Vermont', 'WI':'Wisconsin', 'WV':'West Virginia'}
+sex_dic = {0:'Male', 1:'Female','All':'All', '0':'Male','1':'Female'}
+age_dic = {0:'12y', 1:'13y',2:'14y',3:'15y',4:'16y',5:'17y',6:'18y','All':'All','0':'12y', '1':'13y','2':'14y','3':'15y','4':'16y','5':'17y','6':'18y'}
+race_dic = {0:'White',1:'Black',2:'Latino',3:'Other','All':'All','0':'White','1':'Black','2':'Latino','3':'Other',}    
     
 def residual_figures(dl):
     '''
@@ -528,9 +1129,63 @@ def residual_figures(dl):
     fig, ax = plt.subplots()
     plt.scatter(x = dt['Segregation'], y = dt['MSE'])
     
+def icc_metrics(dl: pd.DataFrame):
+    dl = dl[dl['State']!='USA']
+    dl['Proportion'] = pd.to_numeric(dl['Proportion'])
+    dl['Truth'] = pd.to_numeric(dl['Truth'])
+    icc_df = pd.DataFrame()
+    for s in pd.unique(dl['Sex']):
+        for a in pd.unique(dl.loc[dl['Sex']==s,'Age']):
+            for r in pd.unique(dl.loc[(dl['Sex']==s) & (dl['Age']==a),'Race']):
+                for c in pd.unique(dl['Type']):
+                    if c=='Truth': continue
+                    dt = dl[(dl['Sex']==s) & (dl['Age']==a) & (dl['Race']==r)]
+                    dt = dt[(dt['Type']==c) | (dt['Type']=='Truth')]
+                    icc = pg.intraclass_corr(data=dt, targets='State', raters='Type', ratings='Proportion')
+                    row = pd.DataFrame([[s,a,r,c]+icc.iloc[5,:].tolist()])
+                    icc_df = pd.concat([icc_df,row],axis=0)
+                    
+    icc_df.columns = ['Sex','Age','Race','Method']+icc.columns.tolist()
+    return icc_df
+                
+    
+def all_icc_figures(dl):
+    dl['Proportion'] = pd.to_numeric(dl['Proportion'])
+    dl['Truth'] = pd.to_numeric(dl['Truth'])
+    for s in pd.unique(dl['Sex']):
+        for r in pd.unique(dl.loc[dl['Sex']==s,'Race']):
+            for a in pd.unique(dl.loc[(dl['Sex']==s) & (dl['Race']==r),'Age']):
+                dt = dl[(dl['Sex']==s) & (dl['Age']==a) & (dl['Race']==r)]
+                colors = {'RF':'Red', 'Naive':'Green', 'Truth':'Blue', 'NN':'Blue'}
+                #Print actual graph
+                fig, ax = plt.subplots()
+                fig.set_size_inches(8,8) 
+                ax.set_title('Predicted proportions of LGB individuals \n by real proportions \nSex = '+sex_dic[s]+'   Age = '+age_dic[a]+'   Race = '+race_dic[r]+'   N = '+str(int(dt['Population'].median())), fontsize=20)
+                #plt.subtitle('Sex='+str(s)+', Age='+str(a)+', Race='+str(r))
+                ax.set_xlabel('Real proportions',fontsize=16)
+                ax.set_ylabel('Estimate proportions',fontsize=16)
+                
+                box_style=dict(boxstyle='round', facecolor='blue', alpha=0.5)
+                
+                for c in pd.unique(dt['Type']):
+                    if c=='Truth': continue
+                    dat = dt[dt['Type']==c]
+                    plt.scatter(x = dat['Truth'], y = dat['Proportion'], label = c, color = colors[c])
+                    z = np.polyfit(dat['Truth'], dat['Proportion'], 1)
+                    p = np.poly1d(z)
+                    plt.plot([0,max(dt['Truth'])*1.05], p([0,max(dt['Truth'])*1.05]), color = colors[c],linestyle=(0,(5,5)))
+                    
+                plt.plot(np.linspace(0,max(dt['Truth'])*1.05,34), np.linspace(0,max(dt['Truth'])*1.05,34), color = 'gray',linestyle='solid')
+                ax.legend(loc="upper left",fontsize=14)
+                ax.set_xlim([0, max(dt['Truth']*1.05)])
+                ax.set_ylim([0, max(dt['Truth']*1.05)])
+                fig.savefig(ROOT_DIR+ 'figure/icc/Sex='+str(s)+'-Age='+str(a)+'-Race='+str(r)+'.png')
+                plt.close()
+
 def icc_figure(dl):
-    dt = dl[(dl['Type']!='Truth') & (dl['Segregation']=='General')]
-    colors = {'RF':'Red', 'Naive':'Green', 'Truth':'Blue'}
+    #dt = dl[(dl['Type']!='Truth') & (dl['Segregation']=='General')]
+    dt = dl[(dl['Type']!='Truth') & (dl['State']!='USA') & (dl['Sex'] == 'Complete')]
+    colors = {'RF':'Red', 'Naive':'Green', 'Truth':'Blue', 'NN':'Yellow'}
     #Print actual graph
     fig, ax = plt.subplots()
     fig.set_size_inches(5,5) 
@@ -540,7 +1195,9 @@ def icc_figure(dl):
     dt['Proportion'] = pd.to_numeric(dt['Proportion'])
     #dt['Truth'] = dt['Truth'].apply(lambda x: pd.to_numeric(x.item()))
     dt['Truth'] = pd.to_numeric(dt['Truth'])
-    #icc = pg.intraclass_corr(data=dt, targets='States', raters='Proportion', ratings='Type')
+    #icc = pg.intraclass_corr(data=dt, targets='State', raters='Type', ratings='Proportion')
+    #   Type              Description       ICC  ...  df2      pval           CI95%
+    #5  ICC3k     Average fixed raters  0.688728  ...   33  0.000598    [0.38, 0.84]
     box_style=dict(boxstyle='round', facecolor='blue', alpha=0.5)
     
     for c in pd.unique(dt['Type']):
@@ -574,13 +1231,28 @@ def icc_figure(dl):
     ICC1 = (MSBS - MSWS)/(MSBS+(len(M.columns)-1)*MSWS)
     '''
 
-#icc_figure(pd.read_csv(ROOT_DIR + r"output/prop.csv", index_col=0))
-#mse_figures(pd.read_csv("C:/Users/bruno/Downloads/mse.csv", index_col=0))
+
+#all_icc_figures(pd.read_csv(ROOT_DIR + r"output/cl-prop.csv", index_col=0))
+#icc_df = icc_metrics(pd.read_csv(ROOT_DIR + r"output/cl-prop.csv", index_col=0))
+#mse_figures(pd.read_csv(ROOT_DIR+r"output/cl-mse.csv", index_col=0))
+#analyze_states(pd.read_csv(ROOT_DIR+'output/state-prop.csv',index_col=0))
 X,y,df = setup_data()
+#com = logo_model_test(Xl = X, yl = y, naive=True, ty='Naive')
+#com = model_test(Xl = X, yl = y,naive = True,ty='Naive')
+com=pd.read_csv(ROOT_DIR+r'output/compare-Naive.csv',index_col=0)
+com = com.drop(com[com['Population']==0].index, axis=0)
+com = com.dropna()
+com = pd.concat([com,logo_model_test(Xl=X,yl=y)], axis = 0)
+#com = pd.concat([com,model_test(Xl=X,yl=y)], axis = 0)
+#com = pd.concat([com,pd.read_csv(ROOT_DIR+r'output/compare-RF.csv',index_col=0)], axis = 0)
+com = pd.concat([com,logo_model_test(Xl=X,yl=y,clf=MLPClassifier(hidden_layer_sizes=(30,15), max_iter=500, activation='logistic', random_state=0, verbose=False),ty='NN')], axis=0)
+com = com.drop(com[com['Population']==0].index, axis=0)
+com = com.dropna()
+
 
 mse, prop = test_array(X, y, df)
-mse.to_csv(ROOT_DIR+r'/output/mse_test.csv')
-prop.to_csv(ROOT_DIR+r'/output/prop_test.csv')
+#mse.to_csv(ROOT_DIR+r'/output/mse_test.csv')
+#prop.to_csv(ROOT_DIR+r'/output/prop_test.csv')
 
 mse_figures(mse)
 
@@ -639,3 +1311,17 @@ print(
     "The binary tree structure has {n} nodes and has "
     "the following tree structure:\n".format(n=n_nodes)
 )
+
+'''
+dl[(dl['Sex']=='All')&(dl['Race']=='All')&(dl['Type']=='Naive')&(dl['State']==0)]
+prop[(prop['Sex']=='All')&(prop['Type']=='Naive') & (prop['State']==0)]
+'''
+
+#################
+#FIXES
+##################
+dat = dt.loc[(dt['Age']=='All') & (dt['Sex']=='1') & (dt['Race']!='All'),'Population']
+for ty in pd.unique(dl['Type']):
+    for st in pd.unique(dl['State']):
+        for r in pd.unique(dl['Race']):
+            if r !='All': dl.loc[(dl['Type']==ty)&(dl['State']==st) & (dl['Race']==r) & (dl['Sex']=='1') & (dl['Age']=='All'),'Sex'] = ['All','1']
